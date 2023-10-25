@@ -42,8 +42,8 @@ procLvlCol () {
 	ram2=$(ps -p $p2pid -o %mem | tail -1 | xargs)
 	echo "$SECONDS,$cpu2,$ram2" >> APM2_metrics.csv
 
-	local cpu3=$(ps -p $p3pid -o %cmd | tail -1 | xargs)	
-	local ram3=$(ps -p $p3pid -o %mem | tail -1 | xargs)
+	cpu3=$(ps -p $p3pid -o %cmd | tail -1 | xargs)	
+	ram3=$(ps -p $p3pid -o %mem | tail -1 | xargs)
 	echo "$SECONDS,$cpu3,$ram3" >> APM3_metrics.csv
 
 	cpu4=$(ps -p $p4pid -o %cpu | tail -1 | xargs)	

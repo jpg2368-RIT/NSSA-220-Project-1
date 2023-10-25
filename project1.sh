@@ -4,43 +4,34 @@
 runProcs () {
 	./APM1 192.168.122.1 &
 	p1pid=$!
-	echo "APM1: $p1pid"
 	./APM2 127.0.0.1 &
 	p2pid=$!
-	echo "APM2: $p2pid"
 	./APM3 127.0.0.1 &
 	p3pid=$!
-	echo "APM3: $p3pid"
 	./APM4 127.0.0.1 &
 	p4pid=$!
-	echo "APM4: $p4pid"
 	./APM5 127.0.0.1 &
 	p5pid=$!
-	echo "APM5: $p5pid"
 	./APM6 127.0.0.1 &
 	p6pid=$!
-	echo "APM6: $p6pid"
-
 }
 
 # kills each of the apm scripts
 killProcs () {
-	#kill "$p1pid"
-	#kill "$p2pid"
-	#kill "$p3pid"
-	#kill "$p4pid"
-	#kill "$p5pid"
-	#kill "$p6pid"
-	kill $(ps -a | grep APM | cut -d " " -f 1)
+	kill "$p1pid"
+	kill "$p2pid"
+	kill "$p3pid"
+	kill "$p4pid"
+	kill "$p5pid"
+	kill "$p6pid"
+	#kill $(ps -a | grep APM | cut -d " " -f 1)
 	exit 0
-
 }
 
 #collects process level metrics
 procLvlCol () {
 	# cpu util (ps) [DONE]
 	# ram util (ps) [DONE]
-	# drive writes (df) [UNFINISHED]
 	# output cpu/ram util to <proc_name>_metrics.csv [DONE]
 	# format <seconds>,<%cpu>,<%ram>
 	cpu1=$(ps -p $p1pid -o %cpu | tail -1 | xargs)	
@@ -70,12 +61,21 @@ procLvlCol () {
 
 # collects system level metrics
 sysLvlCol () {
-	# network bandwith util [UNFINISHED]
-	# drive access rates [UNFINISHED]
-	# drive util [UNFINISHED]
-	# write to system_metrics.csv [UNFINISHED]
+	# network bandwith util (ifstat) [DONE]
+	# drive write rate (iostat) [DONE]
+	# drive space left (df) [DONE]
+	# write to system_metrics.csv [DONE]
 	# format <seconds>,<rx data rate>,<tx data rate>,<disk writes>,<available disk capacity>
-	:
+	
+	rxrate=$(ifstat ens33 -t 1 | grep ens33 | xargs | cut -d " " -f 6)
+	txrate=$(ifstat ens33 -t 1 | grep ens33 | xargs | cut -d " " -f 8)
+
+	dwrites=$(iostat sda | grep sda | xargs | cut -d " " -f 4)
+
+	diskcap=$(df / -h -B M| grep / | xargs | cut -d " " -f 4)
+	diskcap=${diskcap:0:-1}
+
+	echo "$SECONDS,$rxrate,$txrate,$dwrites,$diskcap" >> system_metrics.csv
 }
 
 
@@ -88,8 +88,11 @@ do
 	if (( $SECONDS % 5 == 0 ))
 	then	
 		procLvlCol
-		sysLvlCol
-		sleep 2
 	fi
+	if (( $SECONDS % 2 == 0 ))
+	then
+		sysLvlCol
+	fi
+	sleep 1
 done
 trap killProcs EXIT 2> /dev/null

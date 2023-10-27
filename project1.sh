@@ -82,17 +82,35 @@ sysLvlCol () {
 # main
 trap killProcs SIGINT
 runProcs
+
+time_output="seconds"
+end_time=0
+if [ $# -ge 1 ]
+then
+        end_time=$1
+        time_output="/ $end_time seconds"
+fi
+
 # main loop
 while [[ true ]]
 do
-	if (( $SECONDS % 5 == 0 ))
+# prevent mismatching time due to sequential process
+seconds=$SECONDS
+	if (( $seconds % 5 == 0 ))
 	then	
 		procLvlCol
 	fi
-	if (( $SECONDS % 2 == 0 ))
+	if (( $seconds % 2 == 0 ))
 	then
 		sysLvlCol
 	fi
+	if [ $end_time -ne 0 ] && [ $seconds -ge $end_time ]
+	then
+		echo ""
+		killProcs		
+		exit 0
+	fi
+	echo -ne "\r$seconds $time_output"
 	sleep 1
 done
 trap killProcs EXIT 2> /dev/null

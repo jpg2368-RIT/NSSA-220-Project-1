@@ -1,87 +1,51 @@
 #!/bin/bash
 
 # starts each of the apm scripts
-runProcs () {
-	./APM1 192.168.122.1 &
-	p1pid=$!
-	./APM2 127.0.0.1 &
-	p2pid=$!
-	./APM3 127.0.0.1 &
-	p3pid=$!
-	./APM4 127.0.0.1 &
-	p4pid=$!
-	./APM5 127.0.0.1 &
-	p5pid=$!
-	./APM6 127.0.0.1 &
-	p6pid=$!
+run_procs () {
+	apms=("APM1" "APM2" "APM3" "APM4" "APM5" "APM6")
+	ip="127.0.0.1"
+	pids=()
+	for i in ${!apms[@]}; do
+		./${apms[$i]} $ip &
+		# $! get the most recently executed background process
+		pids+=($!)
+	done
 }
 
 # kills each of the apm scripts
-killProcs () {
-	kill "$p1pid"
-	kill "$p2pid"
-	kill "$p3pid"
-	kill "$p4pid"
-	kill "$p5pid"
-	kill "$p6pid"
-	#kill $(ps -a | grep APM | cut -d " " -f 1)
+kill_procs () {
+	for pid in ${pids[@]}; do
+		kill "$pid"
+	done
+	echo ""
 	exit 0
 }
 
-#collects process level metrics
-procLvlCol () {
-	# cpu util (ps) [DONE]
-	# ram util (ps) [DONE]
-	# output cpu/ram util to <proc_name>_metrics.csv [DONE]
-	# format <seconds>,<%cpu>,<%ram>
-	cpu1=$(ps -p $p1pid -o %cpu | tail -1 | xargs)	
-	ram1=$(ps -p $p1pid -o %mem | tail -1 | xargs)
-	echo "$SECONDS,$cpu1,$ram1" >> APM1_metrics.csv
-	
-	cpu2=$(ps -p $p2pid -o %cpu | tail -1 | xargs)	
-	ram2=$(ps -p $p2pid -o %mem | tail -1 | xargs)
-	echo "$SECONDS,$cpu2,$ram2" >> APM2_metrics.csv
-
-	cpu3=$(ps -p $p3pid -o %cmd | tail -1 | xargs)	
-	ram3=$(ps -p $p3pid -o %mem | tail -1 | xargs)
-	echo "$SECONDS,$cpu3,$ram3" >> APM3_metrics.csv
-
-	cpu4=$(ps -p $p4pid -o %cpu | tail -1 | xargs)	
-	ram4=$(ps -p $p4pid -o %mem | tail -1 | xargs)
-	echo "$SECONDS,$cpu4,$ram4" >> APM4_metrics.csv
-
-	cpu5=$(ps -p $p5pid -o %cpu | tail -1 | xargs)	
-	ram5=$(ps -p $p5pid -o %mem | tail -1 | xargs)
-	echo "$SECONDS,$cpu5,$ram5" >> APM5_metrics.csv
-
-	cpu6=$(ps -p $p6pid -o %cpu | tail -1 | xargs)	
-	ram6=$(ps -p $p6pid -o %mem | tail -1 | xargs)
-	echo "$SECONDS,$cpu6,$ram6" >> APM6_metrics.csv	
+# collect process level
+proc_lvl_col () {
+	# collect ps of all pids at once, remove header, and remove newline
+	apms_cpu_mem_output=($(echo "${pids[@]}" | ps -p $(sed 's/ /,/g') -o "%cpu %mem"| tail -n +2 | tr '\n' ' '))
+	#echo "$apms_cpu_mem_output" | IFS=" " read -a apms_cpu_mem_output
+	# write cpu and mem to respective APM#
+	for ((i=0; i < ${#apms_cpu_mem_output[@]}; i+=2)); do
+		echo "$seconds,${apms_cpu_mem_output[$i]},${apms_cpu_mem_output[$i+1]}" >> APM$((i/2+1))_metrics.csv
+	done
 }
 
-# collects system level metrics
-sysLvlCol () {
-	# network bandwith util (ifstat) [DONE]
-	# drive write rate (iostat) [DONE]
-	# drive space left (df) [DONE]
-	# write to system_metrics.csv [DONE]
-	# format <seconds>,<rx data rate>,<tx data rate>,<disk writes>,<available disk capacity>
+sys_lvl_col () {
+	rx_tx_rate=$(ifstat ens33 -t 1 | grep ens33 | xargs | cut -d " " -f 6,8 | tr ' ' ',')
 	
-	rxrate=$(ifstat ens33 -t 1 | grep ens33 | xargs | cut -d " " -f 6)
-	txrate=$(ifstat ens33 -t 1 | grep ens33 | xargs | cut -d " " -f 8)
-
 	dwrites=$(iostat sda | grep sda | xargs | cut -d " " -f 4)
 
-	diskcap=$(df / -h -B M| grep / | xargs | cut -d " " -f 4)
-	diskcap=${diskcap:0:-1}
+        diskcap=$(df / -h -B M| grep / | xargs | cut -d " " -f 4)
+        diskcap=${diskcap:0:-1}
 
-	echo "$SECONDS,$rxrate,$txrate,$dwrites,$diskcap" >> system_metrics.csv
+        echo "$seconds,$rx_tx_rate,$dwrites,$diskcap" >> system_metrics.csv
 }
 
-
-# main
-trap killProcs SIGINT
-runProcs
+#main
+trap kill_procs SIGINT
+run_procs
 
 time_output="seconds"
 end_time=0
@@ -96,21 +60,21 @@ while [[ true ]]
 do
 # prevent mismatching time due to sequential process
 seconds=$SECONDS
-	if (( $seconds % 5 == 0 ))
-	then	
-		procLvlCol
-	fi
-	if (( $seconds % 2 == 0 ))
-	then
-		sysLvlCol
-	fi
-	if [ $end_time -ne 0 ] && [ $seconds -ge $end_time ]
-	then
-		echo ""
-		killProcs		
-		exit 0
-	fi
-	echo -ne "\r$seconds $time_output"
-	sleep 1
+        if (( $seconds % 5 == 0 ))
+        then
+                proc_lvl_col &
+        fi
+        if (( $seconds % 2 == 0 ))
+        then
+                sys_lvl_col &
+        fi
+        if [ $end_time -ne 0 ] && [ $seconds -ge $end_time ]
+        then
+                kill_procs
+                exit 0
+        fi
+        echo -ne "\r$seconds $time_output"
+        sleep 1
 done
-trap killProcs EXIT 2> /dev/null
+trap kill_procs EXIT 2> /dev/null
+
